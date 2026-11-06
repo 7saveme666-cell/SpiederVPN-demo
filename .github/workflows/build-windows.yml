@@ -1,1 +1,59 @@
+name: Build Windows demo
 
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/build-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create Windows Flutter project
+        shell: pwsh
+        run: flutter create --platforms=windows --project-name spieder_vpn "$env:RUNNER_TEMP\spieder_vpn"
+
+      - name: Copy app files
+        shell: pwsh
+        run: |
+          $project = "$env:RUNNER_TEMP\spieder_vpn"
+          Copy-Item "$env:GITHUB_WORKSPACE\pubspec.yaml" "$project\pubspec.yaml" -Force
+          Remove-Item "$project\lib" -Recurse -Force
+          Copy-Item "$env:GITHUB_WORKSPACE\lib" "$project\lib" -Recurse
+
+      - name: Build Windows release
+        shell: pwsh
+        run: |
+          $project = "$env:RUNNER_TEMP\spieder_vpn"
+          Set-Location $project
+          flutter pub get
+          flutter build windows --release
+
+      - name: Package Windows app
+        shell: pwsh
+        run: |
+          $release = "$env:RUNNER_TEMP\spieder_vpn\build\windows\x64\runner\Release"
+          Compress-Archive -Path "$release\*" -DestinationPath "$env:GITHUB_WORKSPACE\SpiederVPN-Windows.zip" -Force
+
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpiederVPN-Windows
+          path: SpiederVPN-Windows.zip
+          retention-days: 30
