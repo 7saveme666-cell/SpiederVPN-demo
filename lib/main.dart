@@ -8,28 +8,29 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 const bg = Color(0xFF08070D);
-const panel = Color(0xFF12101B);
-const panel2 = Color(0xFF191525);
-const purple = Color(0xFF8B35FF);
-const purpleLight = Color(0xFFB16CFF);
+const panel = Color(0xFF100D17);
+const purple = Color(0xFF9B35FF);
+const purpleLight = Color(0xFFBC72FF);
 const white = Color(0xFFF5F1FF);
-const muted = Color(0xFF938AA8);
+const muted = Color(0xFF968CA8);
 const green = Color(0xFF55D69E);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final isDesktop = !kIsWeb &&
+  final desktop = !kIsWeb &&
       (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-  if (isDesktop) {
+  if (desktop) {
     await windowManager.ensureInitialized();
     const options = WindowOptions(
-      size: Size(390, 720),
-      minimumSize: Size(350, 620),
+      size: Size(440, 820),
+      minimumSize: Size(400, 740),
       center: true,
-      title: 'Spieder VPN Demo',
+      title: 'Spieder VPN',
       backgroundColor: bg,
+      titleBarStyle: TitleBarStyle.hidden,
+      windowButtonVisibility: false,
     );
 
     await windowManager.waitUntilReadyToShow(options, () async {
@@ -47,7 +48,7 @@ class SpiederApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Spieder VPN Demo',
+      title: 'Spieder VPN',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -88,19 +89,18 @@ class _VpnHomeState extends State<VpnHome>
   bool showProfile = false;
   int seconds = 0;
 
-  Timer? connectionTimer;
+  Timer? connectTimer;
   Timer? clock;
-
   late final AnimationController webAnimation;
   late final AnimationController spiderSway;
 
   String get flag => countries.firstWhere((item) => item.$1 == country).$2;
 
   String get formattedTime {
-    final hours = (seconds ~/ 3600).toString().padLeft(2, '0');
-    final minutes = ((seconds ~/ 60) % 60).toString().padLeft(2, '0');
-    final secs = (seconds % 60).toString().padLeft(2, '0');
-    return '$hours:$minutes:$secs';
+    final h = (seconds ~/ 3600).toString().padLeft(2, '0');
+    final m = ((seconds ~/ 60) % 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
   }
 
   @override
@@ -120,7 +120,7 @@ class _VpnHomeState extends State<VpnHome>
 
   @override
   void dispose() {
-    connectionTimer?.cancel();
+    connectTimer?.cancel();
     clock?.cancel();
     webAnimation.dispose();
     spiderSway.dispose();
@@ -128,10 +128,10 @@ class _VpnHomeState extends State<VpnHome>
   }
 
   Future<void> closeApp() async {
-    final isDesktop = !kIsWeb &&
+    final desktop = !kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-    if (isDesktop) {
+    if (desktop) {
       await windowManager.close();
     } else {
       await SystemNavigator.pop();
@@ -140,12 +140,12 @@ class _VpnHomeState extends State<VpnHome>
 
   void toggleConnection() {
     if (connected) {
-      connectionTimer?.cancel();
+      connectTimer?.cancel();
       clock?.cancel();
+      webAnimation.reset();
       spiderSway
         ..stop()
         ..reset();
-      webAnimation.reset();
 
       setState(() {
         connected = false;
@@ -164,7 +164,7 @@ class _VpnHomeState extends State<VpnHome>
 
     webAnimation.forward(from: 0);
 
-    connectionTimer = Timer(const Duration(milliseconds: 2200), () {
+    connectTimer = Timer(const Duration(milliseconds: 2200), () {
       if (!mounted) return;
 
       setState(() {
@@ -172,28 +172,24 @@ class _VpnHomeState extends State<VpnHome>
         connected = true;
       });
 
-      // После подключения паук плавно покачивается на готовой паутине.
       spiderSway.repeat(reverse: true);
 
       clock = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) {
-          setState(() => seconds++);
-        }
+        if (mounted) setState(() => seconds++);
       });
     });
   }
 
-  void selectCountry(String selectedCountry) {
-    connectionTimer?.cancel();
+  void selectCountry(String selected) {
+    connectTimer?.cancel();
     clock?.cancel();
-
     webAnimation.reset();
     spiderSway
       ..stop()
       ..reset();
 
     setState(() {
-      country = selectedCountry;
+      country = selected;
       connected = false;
       connecting = false;
       seconds = 0;
@@ -222,10 +218,7 @@ class _VpnHomeState extends State<VpnHome>
             ),
             ...countries.map(
               (item) => ListTile(
-                leading: Text(
-                  item.$2,
-                  style: const TextStyle(fontSize: 25),
-                ),
+                leading: Text(item.$2, style: const TextStyle(fontSize: 25)),
                 title: Text(item.$1),
                 subtitle: Text(
                   item.$3,
@@ -250,28 +243,14 @@ class _VpnHomeState extends State<VpnHome>
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: bg,
-            border: Border.all(color: purple, width: 1.5),
-            borderRadius: BorderRadius.circular(26),
-            boxShadow: [
-              BoxShadow(
-                color: purple.withOpacity(0.16),
-                blurRadius: 18,
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              _header(),
-              Expanded(
-                child: showProfile ? _profilePage() : _homePage(),
-              ),
-              _bottomNavigation(),
-            ],
-          ),
+        child: Column(
+          children: [
+            _header(),
+            Expanded(
+              child: showProfile ? _profilePage() : _homePage(),
+            ),
+            _bottomNavigation(),
+          ],
         ),
       ),
     );
@@ -291,36 +270,35 @@ class _VpnHomeState extends State<VpnHome>
                 icon: const Icon(
                   Icons.arrow_back_ios_new,
                   color: purpleLight,
-                  size: 20,
+                  size: 19,
                 ),
               )
             else
-              const SizedBox(width: 42),
+              IconButton(
+                tooltip: 'Закрыть приложение',
+                onPressed: closeApp,
+                icon: const Icon(Icons.close, color: purpleLight, size: 23),
+              ),
             const Spacer(),
-            const Icon(Icons.pets, color: purple, size: 23),
-            const SizedBox(width: 7),
-            const Text(
-              'Spieder ',
-              style: TextStyle(
+            const SpiderLogo(size: 24),
+            const SizedBox(width: 8),
+            Text(
+              showProfile ? 'Профиль' : 'Spieder VPN',
+              style: const TextStyle(
                 color: white,
                 fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const Text(
-              'VPN',
-              style: TextStyle(
-                color: purpleLight,
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const Spacer(),
-            IconButton(
-              tooltip: 'Закрыть',
-              onPressed: closeApp,
-              icon: const Icon(Icons.close, color: white),
-            ),
+            if (showProfile)
+              IconButton(
+                tooltip: 'Закрыть приложение',
+                onPressed: closeApp,
+                icon: const Icon(Icons.close, color: purpleLight, size: 23),
+              )
+            else
+              const SizedBox(width: 48),
           ],
         ),
       ),
@@ -329,148 +307,141 @@ class _VpnHomeState extends State<VpnHome>
 
   Widget _homePage() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
       child: Column(
         children: [
+          const Spacer(flex: 2),
           Expanded(
-            child: AnimatedBuilder(
-              animation: Listenable.merge([webAnimation, spiderSway]),
-              builder: (context, _) {
-                final progress = connected ? 1.0 : webAnimation.value;
-                final sway = connected
-                    ? math.sin(spiderSway.value * math.pi * 2) * 0.08
-                    : 0.0;
-                final bob = connected
-                    ? math.sin(spiderSway.value * math.pi * 2) * 3
-                    : 0.0;
+            flex: 7,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return AnimatedBuilder(
+                  animation: Listenable.merge([webAnimation, spiderSway]),
+                  builder: (context, _) {
+                    final progress = connected ? 1.0 : webAnimation.value;
+                    final sway = connected
+                        ? math.sin(spiderSway.value * math.pi * 2) * 0.08
+                        : 0.0;
+                    final bob = connected
+                        ? math.sin(spiderSway.value * math.pi * 2) * 3
+                        : 0.0;
 
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: WebPainter(
-                          progress: progress,
-                          visible: connecting || connected,
-                        ),
-                      ),
-                    ),
-
-                    // Паук остаётся над кнопкой; после подключения слегка качается.
-                    Positioned(
-                      top: 24,
-                      child: Transform.translate(
-                        offset: Offset(0, bob),
-                        child: Transform.rotate(
-                          angle: sway,
-                          child: const CustomPaint(
-                            size: Size(64, 72),
-                            painter: SpiderPainter(),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    GestureDetector(
-                      onTap: toggleConnection,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF07060D),
-                          border: Border.all(
-                            color: connecting || connected
-                                ? purpleLight
-                                : purple,
-                            width: 4,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: purple.withOpacity(
-                                connecting || connected ? 0.55 : 0.24,
-                              ),
-                              blurRadius: connecting || connected ? 28 : 16,
-                              spreadRadius: 1,
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: WebPainter(
+                              progress: progress,
+                              visible: connecting || connected,
                             ),
-                          ],
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.power_settings_new_rounded,
-                          color: white,
-                          size: 54,
+                        if (connecting || connected)
+                          Positioned(
+                            top: constraints.maxHeight * 0.17,
+                            child: Transform.translate(
+                              offset: Offset(0, bob),
+                              child: Transform.rotate(
+                                angle: sway,
+                                child: const CustomPaint(
+                                  size: Size(66, 72),
+                                  painter: SpiderPainter(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        GestureDetector(
+                          onTap: toggleConnection,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            width: 160,
+                            height: 160,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF0A0810),
+                              border: Border.all(
+                                color: connected || connecting
+                                    ? purpleLight
+                                    : purple,
+                                width: 3,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: purple.withOpacity(
+                                    connected || connecting ? 0.35 : 0.16,
+                                  ),
+                                  blurRadius: connected || connecting ? 28 : 18,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.power_settings_new_rounded,
+                              color: white,
+                              size: 50,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 );
               },
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
           Text(
             connected
                 ? 'Подключено'
                 : connecting
                     ? 'Подключение...'
                     : 'Не подключено',
-            style: TextStyle(
-              color: connected ? green : muted,
-              fontSize: 16,
+            style: const TextStyle(
+              color: white,
+              fontSize: 17,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 6),
-          SizedBox(
-            height: 34,
-            child: Text(
-              connected ? formattedTime : '',
-              style: const TextStyle(
-                color: white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
           const SizedBox(height: 8),
+          Text(
+            connected
+                ? formattedTime
+                : connecting
+                    ? 'Создаём защищённое соединение...'
+                    : 'Нажмите кнопку для подключения',
+            style: const TextStyle(color: muted, fontSize: 12),
+          ),
+          const Spacer(flex: 2),
           OutlinedButton(
             onPressed: chooseCountry,
             style: OutlinedButton.styleFrom(
               foregroundColor: white,
-              side: const BorderSide(color: purple, width: 1.2),
-              padding: const EdgeInsets.symmetric(
-                vertical: 15,
-                horizontal: 16,
-              ),
+              side: const BorderSide(color: purple, width: 1),
+              minimumSize: const Size.fromHeight(62),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
+                borderRadius: BorderRadius.circular(20),
               ),
             ),
-            child: Row(
+            child: const Row(
               children: [
-                const Icon(Icons.bolt, color: purpleLight),
-                const SizedBox(width: 12),
-                const Expanded(
+                Icon(Icons.bolt, color: purpleLight, size: 22),
+                SizedBox(width: 14),
+                Expanded(
                   child: Text(
                     'Лучший сервер',
-                    style: TextStyle(fontSize: 15),
+                    style: TextStyle(
+                      color: white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                Text(flag, style: const TextStyle(fontSize: 20)),
-                const SizedBox(width: 8),
-                Text(country, style: const TextStyle(fontSize: 13)),
-                const Icon(Icons.chevron_right, color: purpleLight),
+                Icon(Icons.chevron_right, color: purpleLight, size: 24),
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          const Text(
-            'Демо-режим: VPN-сервер не используется',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: muted, fontSize: 10),
-          ),
-          const SizedBox(height: 12),
         ],
       ),
     );
@@ -478,23 +449,21 @@ class _VpnHomeState extends State<VpnHome>
 
   Widget _profilePage() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
       children: [
         const SizedBox(height: 8),
         Container(
-          width: 100,
-          height: 100,
-          margin: const EdgeInsets.symmetric(horizontal: 95),
+          width: 112,
+          height: 112,
+          margin: const EdgeInsets.symmetric(horizontal: 125),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: purple, width: 1.5),
             color: panel,
           ),
-          child: const CustomPaint(
-            painter: SpiderPainter(),
-          ),
+          child: const SpiderLogo(size: 62),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 14),
         const Text(
           'Spieder VPN',
           textAlign: TextAlign.center,
@@ -504,37 +473,36 @@ class _VpnHomeState extends State<VpnHome>
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 5),
         const Text(
           'Твой безопасный интернет',
           textAlign: TextAlign.center,
           style: TextStyle(color: muted, fontSize: 13),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 22),
         _profileTile(
           Icons.workspace_premium,
           'Демо-подписка',
           'Подписка не активна',
           accent: true,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         _sectionTitle('Полезные ссылки'),
         _profileTile(Icons.language, 'Официальный сайт', 'Ссылка не задана'),
-        const SizedBox(height: 8),
+        const SizedBox(height: 9),
         _profileTile(Icons.send, 'Telegram канал', 'Ссылка не задана'),
-        const SizedBox(height: 14),
+        const SizedBox(height: 18),
         _sectionTitle('Управление'),
-        _profileTile(Icons.devices, 'Добавить ещё устройство', 'Демо-режим'),
-        const SizedBox(height: 8),
+        _profileTile(Icons.devices, 'Добавить ещё устройство', 'До 10 устройств'),
+        const SizedBox(height: 9),
         _profileTile(Icons.support_agent, 'Обратиться в поддержку', ''),
-        const SizedBox(height: 12),
       ],
     );
   }
 
   Widget _sectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      padding: const EdgeInsets.only(left: 4, bottom: 9),
       child: Text(
         title,
         style: const TextStyle(
@@ -553,22 +521,18 @@ class _VpnHomeState extends State<VpnHome>
     bool accent = false,
   }) {
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: panel2,
+        color: panel,
         border: Border.all(
-          color: accent ? purple : const Color(0xFF282132),
+          color: accent ? purple : const Color(0xFF211A2B),
         ),
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: purpleLight,
-            size: 25,
-          ),
-          const SizedBox(width: 12),
+          Icon(icon, color: purpleLight, size: 25),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -582,7 +546,7 @@ class _VpnHomeState extends State<VpnHome>
                   ),
                 ),
                 if (subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Text(
                     subtitle,
                     style: const TextStyle(color: muted, fontSize: 11),
@@ -599,12 +563,9 @@ class _VpnHomeState extends State<VpnHome>
 
   Widget _bottomNavigation() {
     return Container(
-      height: 64,
+      height: 66,
       decoration: const BoxDecoration(
-        color: Color(0xFF0E0B15),
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(24),
-        ),
+        color: Color(0xFF0C0A11),
         border: Border(
           top: BorderSide(color: Color(0xFF21182D)),
         ),
@@ -674,29 +635,29 @@ class WebPainter extends CustomPainter {
     if (!visible) return;
 
     final center = Offset(size.width / 2, size.height / 2);
-    final maxRadius = math.min(size.width, size.height) * 0.48;
+    final radius = math.min(size.width, size.height) * 0.48;
     final p = progress.clamp(0.0, 1.0);
 
     final webPaint = Paint()
-      ..color = purpleLight.withOpacity(0.48)
+      ..color = purpleLight.withOpacity(0.34)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.9;
+      ..strokeWidth = 0.8;
 
-    // Радиальные нити прорисовываются от кнопки наружу.
+    // Радиальные нити растут от кнопки наружу.
     for (var i = 0; i < 16; i++) {
       final angle = i * math.pi / 8;
       final end = center +
-          Offset(math.cos(angle), math.sin(angle)) * maxRadius * p;
+          Offset(math.cos(angle), math.sin(angle)) * radius * p;
       canvas.drawLine(center, end, webPaint);
     }
 
-    // Кольца появляются последовательно, образуя паутину.
-    for (var i = 1; i <= 5; i++) {
-      final ringProgress = (p * 5 - (i - 1)).clamp(0.0, 1.0);
+    // Круговые нити появляются по очереди.
+    for (var i = 1; i <= 6; i++) {
+      final ringProgress = (p * 6 - (i - 1)).clamp(0.0, 1.0);
       if (ringProgress <= 0) continue;
 
-      final radius = maxRadius * (i / 5) * ringProgress;
-      canvas.drawCircle(center, radius, webPaint);
+      final ringRadius = radius * (i / 6) * ringProgress;
+      canvas.drawCircle(center, ringRadius, webPaint);
     }
   }
 
@@ -718,41 +679,58 @@ class SpiderPainter extends CustomPainter {
       ..color = purpleLight
       ..style = PaintingStyle.fill;
 
-    final legPaint = Paint()
+    final legsPaint = Paint()
       ..color = purpleLight
       ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
-    // Голова и туловище паука.
-    canvas.drawCircle(center + const Offset(0, -9), 6, bodyPaint);
+    // Голова и туловище.
+    canvas.drawCircle(center + const Offset(0, -10), 6, bodyPaint);
     canvas.drawOval(
       Rect.fromCenter(
-        center: center + const Offset(0, 6),
+        center: center + const Offset(0, 5),
         width: 13,
         height: 19,
       ),
       bodyPaint,
     );
 
-    // Четыре лапки с каждой стороны.
+    // Четыре лапы с каждой стороны.
     for (final side in [-1.0, 1.0]) {
       for (var i = 0; i < 4; i++) {
         final startY = center.dy - 3 + i * 5.0;
         final elbowY = startY + (i < 2 ? -7 : 7);
-        final endY = startY + (i < 2 ? -12 : 12);
-        final outerX = 20 + (i.isOdd ? 3 : 0);
+        final endY = startY + (i < 2 ? -13 : 13);
+        final endX = 21 + (i.isOdd ? 3 : 0);
 
-        final path = Path()
+        final leg = Path()
           ..moveTo(center.dx + side * 5, startY)
           ..lineTo(center.dx + side * 13, elbowY)
-          ..lineTo(center.dx + side * outerX, endY);
+          ..lineTo(center.dx + side * endX, endY);
 
-        canvas.drawPath(path, legPaint);
+        canvas.drawPath(leg, legsPaint);
       }
     }
   }
 
   @override
   bool shouldRepaint(covariant SpiderPainter oldDelegate) => false;
+}
+
+class SpiderLogo extends StatelessWidget {
+  const SpiderLogo({super.key, this.size = 24});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: SpiderPainter(),
+      ),
+    );
+  }
 }
