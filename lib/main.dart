@@ -1,41 +1,18 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:window_manager/window_manager.dart';
 
 const bg = Color(0xFF08070D);
 const panel = Color(0xFF12101B);
+const panel2 = Color(0xFF191525);
 const purple = Color(0xFF8B35FF);
 const purpleLight = Color(0xFFB16CFF);
 const white = Color(0xFFF5F1FF);
 const muted = Color(0xFF938AA8);
 const green = Color(0xFF55D69E);
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  final desktop = !kIsWeb &&
-      (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
-
-  if (desktop) {
-    await windowManager.ensureInitialized();
-    const options = WindowOptions(
-      size: Size(390, 720),
-      minimumSize: Size(350, 620),
-      center: true,
-      title: 'Spieder VPN Demo',
-      backgroundColor: bg,
-    );
-    await windowManager.waitUntilReadyToShow(options, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  }
-
+void main() {
   runApp(const SpiederApp());
 }
 
@@ -45,28 +22,30 @@ class SpiederApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Spieder VPN Demo',
+      title: 'Spieder VPN',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: bg,
-        colorScheme: const ColorScheme.dark(primary: purple, surface: panel),
+        colorScheme: const ColorScheme.dark(
+          primary: purple,
+          surface: panel,
+        ),
         fontFamily: 'Segoe UI',
       ),
-      home: const VpnHome(),
+      home: const SpiederHome(),
     );
   }
 }
 
-class VpnHome extends StatefulWidget {
-  const VpnHome({super.key});
+class SpiederHome extends StatefulWidget {
+  const SpiederHome({super.key});
 
   @override
-  State<VpnHome> createState() => _VpnHomeState();
+  State<SpiederHome> createState() => _SpiederHomeState();
 }
 
-class _VpnHomeState extends State<VpnHome>
-    with SingleTickerProviderStateMixin {
+class _SpiederHomeState extends State<SpiederHome> with TickerProviderStateMixin {
   final countries = const [
     ('Швеция', '🇸🇪', '14 серверов'),
     ('Нидерланды', '🇳🇱', '12 серверов'),
@@ -77,17 +56,18 @@ class _VpnHomeState extends State<VpnHome>
     ('США', '🇺🇸', '4 сервера'),
   ];
 
-  String country = 'Швеция';
+  String selectedCountry = 'Швеция';
   bool connected = false;
   bool connecting = false;
   bool showProfile = false;
   int seconds = 0;
 
-  Timer? clock;
-  Timer? connectionTimer;
-  late final AnimationController animation;
+  late final AnimationController spiderAnimation;
+  Timer? timer;
+  Timer? connectDelay;
 
-  String get flag => countries.firstWhere((item) => item.$1 == country).$2;
+  String get currentFlag =>
+      countries.firstWhere((c) => c.$1 == selectedCountry).$2;
 
   String get formattedTime {
     final h = (seconds ~/ 3600).toString().padLeft(2, '0');
@@ -99,35 +79,24 @@ class _VpnHomeState extends State<VpnHome>
   @override
   void initState() {
     super.initState();
-    animation = AnimationController(
+    spiderAnimation = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 5),
+      duration: const Duration(milliseconds: 1800),
     )..repeat();
   }
 
   @override
   void dispose() {
-    clock?.cancel();
-    connectionTimer?.cancel();
-    animation.dispose();
+    timer?.cancel();
+    connectDelay?.cancel();
+    spiderAnimation.dispose();
     super.dispose();
-  }
-
-  Future<void> closeApp() async {
-    final desktop = !kIsWeb &&
-        (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
-
-    if (desktop) {
-      await windowManager.close();
-    } else {
-      await SystemNavigator.pop();
-    }
   }
 
   void toggleConnection() {
     if (connected) {
-      clock?.cancel();
-      connectionTimer?.cancel();
+      timer?.cancel();
+      connectDelay?.cancel();
       setState(() {
         connected = false;
         connecting = false;
@@ -140,70 +109,79 @@ class _VpnHomeState extends State<VpnHome>
 
     setState(() => connecting = true);
 
-    connectionTimer = Timer(const Duration(seconds: 3), () {
+    connectDelay = Timer(const Duration(milliseconds: 2200), () {
       if (!mounted) return;
-
       setState(() {
         connecting = false;
         connected = true;
       });
 
-      clock = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => seconds++);
+      timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) {
+          setState(() {
+            seconds++;
+          });
+        }
       });
     });
   }
 
-  void selectCountry(String selected) {
-    clock?.cancel();
-    connectionTimer?.cancel();
+  void selectCountry(String country) {
+    timer?.cancel();
+    connectDelay?.cancel();
 
     setState(() {
-      country = selected;
+      selectedCountry = country;
       connected = false;
       connecting = false;
       seconds = 0;
     });
   }
 
-  Future<void> chooseCountry() async {
+  Future<void> showCountrySheet() async {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: panel,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, 12),
-              child: Text(
-                'Выберите сервер',
-                style: TextStyle(
-                  color: white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: SizedBox(
+          height: 420,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 10, 18, 12),
+                child: Text(
+                  'Выберите страну',
+                  style: TextStyle(
+                    color: white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-            ...countries.map(
-              (item) => ListTile(
-                leading: Text(item.$2, style: const TextStyle(fontSize: 24)),
-                title: Text(item.$1),
-                subtitle: Text(
-                  item.$3,
-                  style: const TextStyle(color: muted),
+              ...countries.map(
+                (item) => ListTile(
+                  leading: Text(item.$2, style: const TextStyle(fontSize: 28)),
+                  title: Text(item.$1),
+                  subtitle: Text(
+                    item.$3,
+                    style: const TextStyle(color: muted),
+                  ),
+                  trailing: item.$1 == selectedCountry
+                      ? const Icon(Icons.check, color: purpleLight)
+                      : null,
+                  onTap: () {
+                    selectCountry(item.$1);
+                    Navigator.pop(context);
+                  },
                 ),
-                trailing: item.$1 == country
-                    ? const Icon(Icons.check, color: purpleLight)
-                    : null,
-                onTap: () {
-                  selectCountry(item.$1);
-                  Navigator.pop(context);
-                },
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -212,423 +190,607 @@ class _VpnHomeState extends State<VpnHome>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: bg,
       body: SafeArea(
-        child: Column(
-          children: [
-            _header(),
-            Expanded(
-              child: showProfile ? _profilePage() : _homePage(),
-            ),
-            _bottomNavigation(),
-          ],
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          child: showProfile
+              ? _buildProfileScreen()
+              : _buildHomeScreen(),
         ),
       ),
     );
   }
 
-  Widget _header() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
-      child: Row(
-        children: [
-          if (showProfile)
-            IconButton(
-              onPressed: () => setState(() => showProfile = false),
-              icon: const Icon(
-                Icons.arrow_back_ios_new,
-                color: purpleLight,
-              ),
-            )
-          else
-            const SizedBox(width: 12),
-          const Spacer(),
-          const Icon(Icons.pets, color: purple, size: 25),
-          const SizedBox(width: 8),
-          const Text(
-            'Spieder ',
-            style: TextStyle(
-              color: white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-          const Text(
-            'VPN',
-            style: TextStyle(
-              color: purpleLight,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Закрыть',
-            onPressed: closeApp,
-            icon: const Icon(Icons.close, color: white),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _homePage() {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+  Widget _buildHomeScreen() {
+    return Column(
       children: [
-        _serverCard(),
-        SizedBox(
-          height: 330,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Positioned.fill(
-                child: AnimatedBuilder(
-                  animation: animation,
-                  builder: (_, __) => CustomPaint(
-                    painter: WebPainter(
-                      progress: connecting ? animation.value : 0,
-                      active: connected,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 24,
-                child: Icon(
-                  Icons.pets,
-                  size: 46,
-                  color: purpleLight.withOpacity(0.95),
-                ),
-              ),
-              Transform.translate(
-                offset: const Offset(0, 25),
-                child: GestureDetector(
-                  onTap: toggleConnection,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 350),
-                    width: 112,
-                    height: 112,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: bg,
-                      border: Border.all(
-                        color: connected || connecting
-                            ? purpleLight
-                            : purple,
-                        width: 4,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: purple.withOpacity(
-                            connecting || connected ? 0.55 : 0.22,
-                          ),
-                          blurRadius: connecting || connected ? 32 : 16,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.power_settings_new,
-                      color: white,
-                      size: 48,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Text(
-          connected
-              ? 'Подключено'
-              : connecting
-                  ? 'Подключение...'
-                  : 'Не подключено',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: connected ? green : muted,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          connected ? formattedTime : '',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: white,
-            fontSize: 25,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 22),
-        OutlinedButton(
-          onPressed: chooseCountry,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: white,
-            side: const BorderSide(color: purple, width: 1.3),
-            padding: const EdgeInsets.symmetric(
-              vertical: 17,
-              horizontal: 18,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(28),
-            ),
-          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
           child: Row(
             children: [
-              const Icon(Icons.bolt, color: purpleLight),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Лучший сервер  $flag  $country',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15),
+              _iconButton(Icons.menu_rounded, onPressed: () {}),
+              const Spacer(),
+              const Icon(Icons.spoke, color: purple, size: 22),
+              const SizedBox(width: 8),
+              const Text(
+                'Spieder ',
+                style: TextStyle(
+                  color: white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
                 ),
               ),
-              const Icon(Icons.chevron_right, color: purpleLight),
+              const Text(
+                'VPN',
+                style: TextStyle(
+                  color: purpleLight,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+              const Spacer(),
+              _iconButton(Icons.settings, onPressed: () {}),
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        const Text(
-          'Демо: VPN-сервер не используется.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: muted, fontSize: 11),
-        ),
-        const SizedBox(height: 12),
-      ],
-    );
-  }
-
-  Widget _serverCard() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: panel,
-        border: Border.all(color: const Color(0xFF302344)),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Text(flag, style: const TextStyle(fontSize: 25)),
-          const SizedBox(width: 12),
-          Text(
-            country,
-            style: const TextStyle(
-              color: white,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: purple, width: 2),
+              borderRadius: BorderRadius.circular(24),
+              color: bg,
             ),
-          ),
-          const Spacer(),
-          TextButton(
-            onPressed: chooseCountry,
-            child: const Text(
-              'Изменить ›',
-              style: TextStyle(color: purpleLight),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _profilePage() {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      children: [
-        const SizedBox(height: 12),
-        const Icon(Icons.pets, color: purple, size: 58),
-        const SizedBox(height: 10),
-        const Text(
-          'Spieder VPN',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: white,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Твой безопасный интернет',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 24),
-        _profileTile(
-          Icons.workspace_premium,
-          'Демо-подписка',
-          'Подписка не активна',
-        ),
-        const SizedBox(height: 12),
-        _sectionTitle('Полезные ссылки'),
-        _profileTile(
-          Icons.language,
-          'Официальный сайт',
-          'Ссылку можно добавить позже',
-        ),
-        const SizedBox(height: 10),
-        _profileTile(
-          Icons.send,
-          'Telegram канал',
-          'Ссылку можно добавить позже',
-        ),
-        const SizedBox(height: 12),
-        _sectionTitle('Управление'),
-        _profileTile(Icons.devices, 'Устройства', 'Демо-режим'),
-        const SizedBox(height: 10),
-        _profileTile(
-          Icons.support_agent,
-          'Поддержка',
-          'Ссылку можно добавить позже',
-        ),
-        const SizedBox(height: 20),
-      ],
-    );
-  }
-
-  Widget _sectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8, top: 10),
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: muted,
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Widget _profileTile(IconData icon, String title, String subtitle) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: panel,
-        border: Border.all(color: const Color(0xFF282132)),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: purpleLight, size: 27),
-          const SizedBox(width: 14),
-          Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: white)),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: muted, fontSize: 12),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF100D18),
+                            border: Border.all(color: const Color(0xFF2B1D42)),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          child: Row(
+                            children: [
+                              Text(currentFlag, style: const TextStyle(fontSize: 24)),
+                              const SizedBox(width: 12),
+                              Text(
+                                selectedCountry,
+                                style: const TextStyle(
+                                  color: white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: showCountrySheet,
+                                style: const ButtonStyle(
+                                  overlayColor: MaterialStatePropertyAll(
+                                    Color(0x1F8B35FF),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Изменить ›',
+                                  style: TextStyle(
+                                    color: purpleLight,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Positioned.fill(
+                                child: AnimatedBuilder(
+                                  animation: spiderAnimation,
+                                  builder: (_, __) {
+                                    return CustomPaint(
+                                      painter: WebPainter(
+                                        active: connecting || connected,
+                                        progress: spiderAnimation.value,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              Positioned(
+                                top: 70,
+                                child: CustomPaint(
+                                  size: const Size(180, 180),
+                                  painter: SpiderPainter(),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: toggleConnection,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  width: 170,
+                                  height: 170,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(0xFF07060D),
+                                    border: Border.all(
+                                      color:
+                                          connected || connecting ? purpleLight : purple,
+                                      width: 4,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: purple.withOpacity(
+                                          connected || connecting ? 0.70 : 0.30,
+                                        ),
+                                        blurRadius: 20,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.power_settings_new_rounded,
+                                      size: 58,
+                                      color: connected || connecting
+                                          ? white
+                                          : white.withOpacity(0.9),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          connected
+                              ? 'Подключено'
+                              : connecting
+                                  ? 'Подключение...'
+                                  : 'Не подключено',
+                          style: TextStyle(
+                            color: connected ? green : muted,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: const BoxDecoration(),
+                          child: Text(
+                            connected ? formattedTime : '',
+                            style: const TextStyle(
+                              color: white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+                          decoration: BoxDecoration(
+                            color: panel2,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: Color(0xFF2A1B45)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.bolt_rounded, color: purpleLight, size: 22),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Лучший сервер',
+                                  style: TextStyle(
+                                    color: white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                currentFlag,
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                selectedCountry,
+                                style: const TextStyle(
+                                  color: white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right, color: purpleLight),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF0D0A13),
+                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {},
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.home_rounded, color: purpleLight, size: 26),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Главная',
+                                style: TextStyle(
+                                  color: purpleLight,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() => showProfile = true);
+                          },
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.person_rounded, color: muted, size: 26),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Профиль',
+                                style: TextStyle(
+                                  color: muted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: purpleLight),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _bottomNavigation() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF0E0B15),
-        border: Border(top: BorderSide(color: Color(0xFF21182D))),
-      ),
-      child: Row(
-        children: [
-          _navItem(
-            Icons.home_rounded,
-            'Главная',
-            !showProfile,
-            () => setState(() => showProfile = false),
-          ),
-          _navItem(
-            Icons.person_rounded,
-            'Профиль',
-            showProfile,
-            () => setState(() => showProfile = true),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _navItem(
-    IconData icon,
-    String title,
-    bool selected,
-    VoidCallback onTap,
-  ) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+  Widget _buildProfileScreen() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+          child: Row(
             children: [
-              Icon(icon, color: selected ? purple : muted, size: 24),
-              const SizedBox(height: 3),
-              Text(
-                title,
+              GestureDetector(
+                onTap: () => setState(() => showProfile = false),
+                child: const Icon(Icons.arrow_back_ios_new_rounded, color: purpleLight),
+              ),
+              const Spacer(),
+              const Text(
+                'Профиль',
                 style: TextStyle(
-                  color: selected ? purpleLight : muted,
-                  fontSize: 12,
+                  color: white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+              const Spacer(),
+              _iconButton(Icons.settings, onPressed: () {}),
             ],
           ),
         ),
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: purple, width: 2),
+              borderRadius: BorderRadius.circular(24),
+              color: bg,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(top: 14),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: purple, width: 2),
+                      color: const Color(0xFF0C0914),
+                    ),
+                    child: Center(
+                      child: CustomPaint(
+                        size: const Size(80, 80),
+                        painter: SpiderPainter(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Spieder VPN',
+                    style: TextStyle(
+                      color: white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Text(
+                    'Твой безопасный интернет',
+                    style: TextStyle(
+                      color: muted,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 18),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: panel2,
+                      border: Border.all(color: const Color(0xFF2A1B45)),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.workspace_premium_rounded, color: purpleLight, size: 26),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Подписка активна',
+                                style: TextStyle(
+                                  color: white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'До 15.05.2025 • 30 дней',
+                                style: TextStyle(
+                                  color: muted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, color: purpleLight),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 18),
+                      child: const Text(
+                        'Полезные ссылки',
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _profileRow(Icons.language_rounded, 'Официальный сайт', 'spiedervpn.com'),
+                  _profileRow(Icons.send_rounded, 'Telegram канал', 't.me/spiedervpn'),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 18),
+                      child: const Text(
+                        'Управление',
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _profileRow(Icons.add_rounded, 'Добавить ещё устройство', '(до 10)'),
+                  _profileRow(Icons.support_agent_rounded, 'Обратиться в поддержку', ''),
+                  _profileRow(Icons.logout_rounded, 'Выйти из аккаунта', ''),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() => showProfile = false);
+                            },
+                            child: Column(
+                              children: const [
+                                Icon(Icons.home_rounded, color: muted, size: 26),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Главная',
+                                  style: TextStyle(color: muted, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {},
+                            child: Column(
+                              children: const [
+                                Icon(Icons.person_rounded, color: purpleLight, size: 26),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Профиль',
+                                  style: TextStyle(
+                                    color: purpleLight,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _profileRow(IconData icon, String title, String subtitle) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: panel2,
+        border: Border.all(color: const Color(0xFF2A1B45)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: purpleLight, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: subtitle.isEmpty
+                ? Text(
+                    title,
+                    style: const TextStyle(
+                      color: white,
+                      fontSize: 16,
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: purpleLight),
+        ],
+      ),
+    );
+  }
+
+  Widget _iconButton(IconData icon, {required VoidCallback onPressed}) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F0D18),
+          border: Border.all(color: const Color(0xFF2E1F45)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(icon, color: white, size: 22),
       ),
     );
   }
 }
 
 class WebPainter extends CustomPainter {
-  WebPainter({required this.progress, required this.active});
-
   final double progress;
   final bool active;
+
+  const WebPainter({
+    required this.progress,
+    required this.active,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2 + 20);
-    final maxRadius = math.min(size.width, size.height) * 0.46;
+    final maxRadius = math.min(size.width, size.height) * 0.42;
 
     final webPaint = Paint()
-      ..color = purple.withOpacity(active ? 0.27 : 0.14)
+      ..color = purple.withOpacity(active ? 0.28 : 0.13)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
+      ..strokeWidth = 1;
 
-    for (final fraction in [0.48, 0.68, 0.88, 1.0]) {
-      canvas.drawCircle(center, maxRadius * fraction, webPaint);
+    for (final r in [0.40, 0.60, 0.82, 1.0]) {
+      canvas.drawCircle(center, maxRadius * r, webPaint);
     }
 
     for (var i = 0; i < 16; i++) {
       final angle = i * math.pi / 8;
-      final end =
-          center + Offset(math.cos(angle), math.sin(angle)) * maxRadius;
+      final end = center + Offset(math.cos(angle), math.sin(angle)) * maxRadius;
       canvas.drawLine(center, end, webPaint);
     }
 
-    if (progress > 0 || active) {
+    if (active) {
       final strandPaint = Paint()
-        ..color = purpleLight.withOpacity(active ? 0.6 : 0.9)
+        ..color = purpleLight.withOpacity(0.95)
         ..strokeWidth = 2
         ..style = PaintingStyle.stroke
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
 
-      final reach = active ? 1.0 : progress;
-
-      for (var i = 0; i < 12; i++) {
-        final angle = (i * math.pi / 6) + progress * math.pi * 2;
-        final radius = maxRadius * (0.25 + 0.75 * reach);
+      for (var i = 0; i < 14; i++) {
+        final angle = (i * math.pi / 7) + progress * math.pi * 2;
+        final radius = maxRadius * (0.25 + 0.75 * (0.8 + (progress * 0.2)));
         final end = center + Offset(math.cos(angle), math.sin(angle)) * radius;
         canvas.drawLine(center, end, strandPaint);
       }
@@ -639,4 +801,49 @@ class WebPainter extends CustomPainter {
   bool shouldRepaint(covariant WebPainter oldDelegate) {
     return oldDelegate.progress != progress || oldDelegate.active != active;
   }
+}
+
+class SpiderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+
+    final body = Paint()..color = const Color(0xFF1B0F2B);
+    final shadow = Paint()..color = const Color(0xFF6A2AFF).withOpacity(0.2);
+
+    // body
+    canvas.drawCircle(center, 34, body);
+    canvas.drawCircle(center.offset(0, 24), 22, body);
+
+    // legs
+    final legPaint = Paint()
+      ..color = purpleLight
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke;
+
+    for (final sign in [-1.0, 1.0]) {
+      for (int i = 0; i < 4; i++) {
+        final y = center.dy - 10 + i * 15;
+        final x = center.dx + sign * (12 + i * 2);
+        final end = Offset(x + sign * 26, y - 12 + i * 8);
+        canvas.drawLine(
+          Offset(center.dx + sign * 10, y),
+          end,
+          legPaint,
+        );
+      }
+    }
+
+    // eyes and glow
+    final eyePaint = Paint()..color = Colors.white.withOpacity(0.9);
+    final glowPaint = Paint()..color = purpleLight.withOpacity(0.7);
+
+    canvas.drawCircle(center.offset(-8, -2), 4, eyePaint);
+    canvas.drawCircle(center.offset(8, -2), 4, eyePaint);
+
+    canvas.drawCircle(center.offset(0, 18), 10, glowPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
